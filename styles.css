@@ -80,13 +80,22 @@ input {
   margin-top: 22px;
 }
 
-.chips span {
+.chips span,
+.chips a {
+  display: inline-flex;
+  align-items: center;
   border-radius: 999px;
   padding: 9px 16px;
   color: #675a8c;
   background: #fff;
   font-size: 0.92rem;
   font-weight: 700;
+  text-decoration: none;
+}
+
+.chips a:hover {
+  color: #fff;
+  background: linear-gradient(90deg, var(--pink), var(--coral));
 }
 
 .workspace {
