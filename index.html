@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Whisper 字幕神器</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="hero">
+        <div>
+          <p class="brand-mark">♪ Whisper 字幕神器</p>
+          <p class="hero-copy">
+            本機 AI 自動辨識語音，支援 mp3、mp4、wav、m4a、ogg、webm，輸出 SRT 字幕檔。
+            整體以手機也能順手操作為目標，適合快速整理錄音、課程影片與研習內容。
+          </p>
+          <div class="chips" aria-label="功能特色">
+            <span>本機離線</span>
+            <span>支援 CPU / WebGPU</span>
+            <span>輸出 UTF-8 BOM SRT</span>
+            <span>可檢查環境與安裝套件</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <div class="panel">
+          <div class="youtube-box">
+            <div class="panel-title">
+              <h1>YouTube 網址</h1>
+              <span>需先啟動本機字幕助手</span>
+            </div>
+            <div class="url-row">
+              <input id="youtubeUrl" type="url" placeholder="貼上 YouTube 影片網址" />
+              <button id="youtubeDownloadButton" type="button">下載影片</button>
+            </div>
+            <label class="consent-row">
+              <input id="rightsCheck" type="checkbox" />
+              <span>我確認這是自己的影片、已取得授權，或平台明確允許下載的內容。</span>
+            </label>
+            <p class="helper-status" id="helperStatus">本機助手尚未檢查。</p>
+          </div>
+
+          <div class="panel-title">
+            <h1>上傳媒體檔</h1>
+            <span>拖曳或點一下都可以</span>
+          </div>
+
+          <label class="drop-zone" id="dropZone">
+            <input id="fileInput" type="file" accept="audio/*,video/mp4,video/webm,video/ogg,.m4a" />
+            <span class="drop-icon">🎧</span>
+            <strong>把音訊或影片拖進來</strong>
+            <small>或點這裡挑選檔案，完成後會自動送到本機 Whisper 進行轉錄。</small>
+            <span class="format-row">mp3 mp4 wav m4a ogg webm</span>
+          </label>
+
+          <p class="current-file">目前檔案：<strong id="fileName">尚未選擇</strong></p>
+
+          <div class="setting-block">
+            <div class="panel-title compact">
+              <h2>字幕切割粒度</h2>
+              <span>依用途微調</span>
+            </div>
+            <div class="segment-grid" role="radiogroup" aria-label="字幕切割粒度">
+              <label class="segment-card">
+                <input type="radio" name="subtitleMode" value="tight" />
+                <span>細緻</span>
+                <small>保留較多原始切段，適合後製微調。</small>
+              </label>
+              <label class="segment-card">
+                <input type="radio" name="subtitleMode" value="standard" checked />
+                <span>標準</span>
+                <small>兼顧閱讀與時間軸，推薦一般使用。</small>
+              </label>
+              <label class="segment-card">
+                <input type="radio" name="subtitleMode" value="loose" />
+                <span>寬鬆</span>
+                <small>盡量合併片段，適合快速閱讀。</small>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel status-panel">
+          <div class="ring" id="ring"></div>
+          <h2 id="statusTitle">等待上傳檔案</h2>
+          <p id="statusText">選擇媒體檔後，程式會在瀏覽器中載入 Whisper 模型並開始辨識。</p>
+          <p class="timer" id="timerText">已等待 0 分 0 秒</p>
+          <div class="progress-track">
+            <div class="progress-bar" id="progressBar"></div>
+          </div>
+          <pre id="preview" class="preview" hidden></pre>
+        </div>
+      </section>
+
+      <section class="actions" aria-label="操作按鈕">
+        <button id="checkButton" type="button">檢查環境</button>
+        <button id="helperButton" type="button">檢查本機助手</button>
+        <button id="downloadButton" type="button" disabled>下載 SRT</button>
+      </section>
+    </main>
+
+    <dialog id="helpDialog">
+      <form method="dialog">
+        <h2>本機助手說明</h2>
+        <p>
+          第一次使用請到專案的 <strong>local-helper</strong> 資料夾，雙擊
+          <strong>start-helper.bat</strong>。它會安裝必要套件，並在本機啟動字幕助手。
+        </p>
+        <p>
+          視窗顯示 <strong>http://127.0.0.1:8765</strong> 後不要關閉，再回到網頁按
+          「檢查本機助手」。
+        </p>
+        <button>知道了</button>
+      </form>
+    </dialog>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
