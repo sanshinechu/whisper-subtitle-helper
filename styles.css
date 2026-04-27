@@ -31,6 +31,10 @@ input {
   font: inherit;
 }
 
+select {
+  font: inherit;
+}
+
 .app-shell {
   width: min(100%, 1120px);
   min-height: 100vh;
@@ -245,6 +249,27 @@ input {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
+}
+
+.select-row {
+  display: grid;
+  gap: 8px;
+}
+
+.select-row span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.select-row select {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid rgba(130, 100, 205, 0.26);
+  border-radius: 14px;
+  padding: 0 14px;
+  color: var(--ink);
+  background: #fff;
 }
 
 .segment-card {

@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from yt_dlp import YoutubeDL
 
@@ -17,6 +17,7 @@ APP_NAME = "Whisper 字幕助手"
 HOST = "127.0.0.1"
 PORT = 8765
 ROOT_DIR = Path(__file__).resolve().parent
+FRONTEND_DIR = ROOT_DIR.parent
 DOWNLOAD_DIR = ROOT_DIR / "downloads"
 ALLOWED_HOSTS = {
     "youtube.com",
@@ -31,6 +32,21 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 
 jobs: dict[str, dict[str, Any]] = {}
 jobs_lock = threading.Lock()
+
+
+@app.get("/")
+def index() -> Any:
+    return send_from_directory(FRONTEND_DIR, "index.html")
+
+
+@app.get("/app.js")
+def app_js() -> Any:
+    return send_from_directory(FRONTEND_DIR, "app.js")
+
+
+@app.get("/styles.css")
+def styles_css() -> Any:
+    return send_from_directory(FRONTEND_DIR, "styles.css")
 
 
 def is_youtube_url(url: str) -> bool:

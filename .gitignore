@@ -1,5 +1,7 @@
 local-helper/.venv/
 local-helper/downloads/
+local-helper/.tmp/
+local-helper/server-test.*
 local-helper/__pycache__/
 *.pyc
 .DS_Store

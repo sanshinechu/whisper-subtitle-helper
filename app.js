@@ -1,14 +1,16 @@
-import { env, pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1";
-
-const MODEL_ID = "onnx-community/whisper-tiny";
+const DEFAULT_MODEL_ID = "onnx-community/whisper-small";
 const TARGET_SAMPLE_RATE = 16000;
 const SRT_BOM = "\ufeff";
 const HELPER_URL = "http://127.0.0.1:8765";
+const TRANSFORMERS_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1";
+
+let pipeline = null;
 
 const ui = {
   fileInput: document.querySelector("#fileInput"),
   dropZone: document.querySelector("#dropZone"),
   fileName: document.querySelector("#fileName"),
+  modelSelect: document.querySelector("#modelSelect"),
   statusTitle: document.querySelector("#statusTitle"),
   statusText: document.querySelector("#statusText"),
   timerText: document.querySelector("#timerText"),
@@ -25,14 +27,12 @@ const ui = {
 };
 
 let transcriber = null;
+let loadedModelId = "";
 let activeDevice = "";
 let srtContent = "";
 let selectedFile = null;
 let timer = null;
 let startedAt = 0;
-
-env.allowLocalModels = false;
-env.useBrowserCache = true;
 
 ui.fileInput.addEventListener("change", () => {
   const [file] = ui.fileInput.files;
@@ -62,6 +62,15 @@ ui.checkButton.addEventListener("click", checkEnvironment);
 ui.helperButton.addEventListener("click", checkHelper);
 ui.youtubeDownloadButton.addEventListener("click", startYoutubeDownload);
 ui.downloadButton.addEventListener("click", downloadSrt);
+ui.modelSelect.addEventListener("change", () => {
+  transcriber = null;
+  loadedModelId = "";
+  ui.downloadButton.disabled = true;
+  srtContent = "";
+  ui.preview.hidden = true;
+  ui.preview.textContent = "";
+  setStatus("模型已切換", "下一次上傳或拖曳檔案時，會載入新選擇的 Whisper 模型。", 0);
+});
 
 async function handleFile(file) {
   selectedFile = file;
@@ -76,10 +85,11 @@ async function handleFile(file) {
     setStatus("準備音訊", "正在讀取媒體檔並轉成 Whisper 需要的 16 kHz 音訊。", 8);
     const audio = await decodeToMono16k(file);
 
-    setStatus("載入 Whisper", "第一次使用會下載模型，檔案會快取在瀏覽器裡。", 18);
-    transcriber = transcriber ?? (await createTranscriber());
+    const modelId = getSelectedModelId();
+    setStatus("載入 Whisper", `正在載入 ${modelLabel(modelId)}，第一次使用會下載模型並快取在瀏覽器裡。`, 18);
+    transcriber = transcriber && loadedModelId === modelId ? transcriber : await createTranscriber(modelId);
 
-    setStatus("Whisper 正在辨識中", `目前使用 ${deviceLabel(activeDevice)}，影片越長需要等越久。`, 42);
+    setStatus("Whisper 正在辨識中", `目前使用 ${modelLabel(modelId)} / ${deviceLabel(activeDevice)}，影片越長需要等越久。`, 42);
     const result = await transcriber(audio, {
       language: "chinese",
       task: "transcribe",
@@ -150,31 +160,55 @@ function resampleLinear(input, sourceRate, targetRate) {
 async function getBestDevice() {
   if (!("gpu" in navigator)) return "wasm";
   try {
-    const adapter = await navigator.gpu.requestAdapter();
+    const adapter = await withTimeout(navigator.gpu.requestAdapter(), 2500);
     return adapter ? "webgpu" : "wasm";
   } catch {
     return "wasm";
   }
 }
 
-async function createTranscriber() {
+function withTimeout(promise, milliseconds) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      window.setTimeout(() => reject(new Error("timeout")), milliseconds);
+    }),
+  ]);
+}
+
+async function createTranscriber(modelId) {
+  const transcriberPipeline = await getPipeline();
   const preferredDevice = await getBestDevice();
   try {
     activeDevice = preferredDevice;
-    return await pipeline("automatic-speech-recognition", MODEL_ID, {
+    const nextTranscriber = await transcriberPipeline("automatic-speech-recognition", modelId, {
       device: preferredDevice,
       progress_callback: updateModelProgress,
     });
+    loadedModelId = modelId;
+    return nextTranscriber;
   } catch (error) {
     if (preferredDevice !== "webgpu") throw error;
     console.warn("WebGPU 載入失敗，改用 CPU 模式。", error);
     setStatus("改用 CPU 模式", "WebGPU 載入不成功，正在改用較穩定的 CPU 模式。", 24);
     activeDevice = "wasm";
-    return pipeline("automatic-speech-recognition", MODEL_ID, {
+    const nextTranscriber = await transcriberPipeline("automatic-speech-recognition", modelId, {
       device: "wasm",
       progress_callback: updateModelProgress,
     });
+    loadedModelId = modelId;
+    return nextTranscriber;
   }
+}
+
+async function getPipeline() {
+  if (pipeline) return pipeline;
+
+  const transformers = await import(TRANSFORMERS_URL);
+  transformers.env.allowLocalModels = false;
+  transformers.env.useBrowserCache = true;
+  pipeline = transformers.pipeline;
+  return pipeline;
 }
 
 function updateModelProgress(progress) {
@@ -261,6 +295,18 @@ function getSubtitleMode() {
   return document.querySelector("input[name='subtitleMode']:checked")?.value || "standard";
 }
 
+function getSelectedModelId() {
+  return ui.modelSelect?.value || DEFAULT_MODEL_ID;
+}
+
+function modelLabel(modelId) {
+  return {
+    "onnx-community/whisper-tiny": "Tiny",
+    "onnx-community/whisper-base": "Base",
+    "onnx-community/whisper-small": "Small",
+  }[modelId] || modelId;
+}
+
 function downloadSrt() {
   if (!srtContent || !selectedFile) return;
   const basename = selectedFile.name.replace(/\.[^.]+$/, "");
@@ -274,14 +320,21 @@ function downloadSrt() {
 }
 
 async function checkEnvironment() {
-  const device = await getBestDevice();
-  const cache = "caches" in window ? "支援模型快取" : "不支援模型快取";
-  setStatus("環境檢查完成", `此瀏覽器會使用 ${deviceLabel(device)}，${cache}。`, 100);
+  setStatus("正在檢查環境", "正在確認瀏覽器可用的辨識模式。", 20);
+  try {
+    const device = await getBestDevice();
+    const cache = "caches" in window ? "支援模型快取" : "不支援模型快取";
+    setStatus("環境檢查完成", `此瀏覽器會使用 ${deviceLabel(device)}，${cache}。`, 100);
+  } catch (error) {
+    setStatus("環境檢查失敗", getFriendlyError(error), 0);
+  }
 }
 
 async function checkHelper() {
+  setStatus("正在檢查本機助手", "正在連線到本機助手服務。", 20);
+  ui.helperStatus.textContent = "正在檢查本機助手連線...";
   try {
-    const response = await fetch(`${HELPER_URL}/health`);
+    const response = await fetch(`${HELPER_URL}/health`, { cache: "no-store" });
     if (!response.ok) throw new Error("本機助手沒有回應。");
     const data = await response.json();
     ui.helperStatus.textContent = `本機助手已連線，下載資料夾：${data.download_dir}`;

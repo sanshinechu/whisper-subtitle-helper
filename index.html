@@ -59,6 +59,21 @@
 
           <div class="setting-block">
             <div class="panel-title compact">
+              <h2>Whisper 模型</h2>
+              <span>越大越準但越慢</span>
+            </div>
+            <label class="select-row">
+              <span>辨識模型</span>
+              <select id="modelSelect">
+                <option value="onnx-community/whisper-tiny">Tiny - 最快，適合短片測試</option>
+                <option value="onnx-community/whisper-base">Base - 平衡速度與準確度</option>
+                <option value="onnx-community/whisper-small" selected>Small - 較準，載入與辨識較慢</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="setting-block">
+            <div class="panel-title compact">
               <h2>字幕切割粒度</h2>
               <span>依用途微調</span>
             </div>
@@ -116,6 +131,6 @@
       </form>
     </dialog>
 
-    <script type="module" src="./app.js"></script>
+    <script type="module" src="./app.js?v=20260427-4"></script>
   </body>
 </html>

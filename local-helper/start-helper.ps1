@@ -17,10 +17,32 @@ try {
     $PythonArgs = @("-3")
   } elseif (Get-Command python -ErrorAction SilentlyContinue) {
     $PythonExe = "python"
+  } else {
+    $CodexPython = Join-Path $env:USERPROFILE ".cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
+    if (Test-Path -LiteralPath $CodexPython) {
+      $PythonExe = $CodexPython
+    }
   }
 
   if (-not $PythonExe) {
     throw "Python was not found. Please install Python 3.11 or later: https://www.python.org/downloads/"
+  }
+
+  $VenvDir = Join-Path $ScriptDir ".venv"
+  $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
+
+  function Test-VenvPython {
+    param([string] $Path)
+    if (-not (Test-Path -LiteralPath $Path)) {
+      return $false
+    }
+
+    try {
+      & $Path --version *> $null
+      return $LASTEXITCODE -eq 0
+    } catch {
+      return $false
+    }
   }
 
   if (-not (Test-Path -LiteralPath ".\.venv")) {
@@ -28,9 +50,29 @@ try {
     & $PythonExe @PythonArgs -m venv .venv
   }
 
-  $VenvPython = Join-Path $ScriptDir ".venv\Scripts\python.exe"
-  if (-not (Test-Path -LiteralPath $VenvPython)) {
-    throw "Cannot find virtual environment Python: $VenvPython"
+  if (-not (Test-VenvPython -Path $VenvPython)) {
+    Write-Host "Existing local Python environment is not usable. Recreating it..."
+
+    $ResolvedScriptDir = (Resolve-Path -LiteralPath $ScriptDir).Path.TrimEnd('\')
+    $ResolvedVenvDir = if (Test-Path -LiteralPath $VenvDir) {
+      (Resolve-Path -LiteralPath $VenvDir).Path.TrimEnd('\')
+    } else {
+      $VenvDir.TrimEnd('\')
+    }
+
+    if (-not $ResolvedVenvDir.StartsWith($ResolvedScriptDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+      throw "Refusing to remove a virtual environment outside the helper folder: $ResolvedVenvDir"
+    }
+
+    if (Test-Path -LiteralPath $VenvDir) {
+      Remove-Item -LiteralPath $VenvDir -Recurse -Force
+    }
+
+    & $PythonExe @PythonArgs -m venv .venv
+  }
+
+  if (-not (Test-VenvPython -Path $VenvPython)) {
+    throw "Cannot start the virtual environment Python: $VenvPython"
   }
 
   Write-Host "Installing or updating packages..."
