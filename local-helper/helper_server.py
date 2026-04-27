@@ -108,7 +108,7 @@ def run_download(job_id: str, url: str) -> None:
     ffmpeg_path = find_ffmpeg()
     options = {
         "outtmpl": output_template,
-        "format": "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bestvideo*+bestaudio/best",
+        "format": "bv*[vcodec^=avc1][ext=mp4]+ba[ext=m4a]/b[vcodec^=avc1][ext=mp4]/best[vcodec^=avc1][ext=mp4]",
         "merge_output_format": "mp4",
         "noplaylist": True,
         "restrictfilenames": True,
