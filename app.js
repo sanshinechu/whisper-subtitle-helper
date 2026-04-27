@@ -3,8 +3,10 @@ const TARGET_SAMPLE_RATE = 16000;
 const SRT_BOM = "\ufeff";
 const HELPER_URL = "http://127.0.0.1:8765";
 const TRANSFORMERS_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1";
+const OPENCC_URL = "https://cdn.jsdelivr.net/npm/opencc-js@1.0.5/dist/esm/full.js";
 
 let pipeline = null;
+let traditionalConverter = null;
 
 const ui = {
   fileInput: document.querySelector("#fileInput"),
@@ -98,8 +100,8 @@ async function handleFile(file) {
       return_timestamps: true,
     });
 
-    setStatus("正在整理字幕", "正在把辨識結果轉成 SRT 字幕格式。", 88);
-    const cues = normalizeChunks(result);
+    setStatus("轉換繁體中文", "正在把辨識結果整理為繁體中文字幕。", 88);
+    const cues = await convertCuesToTraditional(normalizeChunks(result));
     srtContent = SRT_BOM + buildSrt(cues, getSubtitleMode());
     ui.preview.textContent = srtContent.slice(1, 1800);
     ui.preview.hidden = false;
@@ -209,6 +211,27 @@ async function getPipeline() {
   transformers.env.useBrowserCache = true;
   pipeline = transformers.pipeline;
   return pipeline;
+}
+
+async function getTraditionalConverter() {
+  if (traditionalConverter) return traditionalConverter;
+
+  const opencc = await import(OPENCC_URL);
+  traditionalConverter = opencc.Converter({ from: "cn", to: "tw" });
+  return traditionalConverter;
+}
+
+async function convertCuesToTraditional(cues) {
+  try {
+    const converter = await getTraditionalConverter();
+    return cues.map((cue) => ({
+      ...cue,
+      text: converter(cue.text),
+    }));
+  } catch (error) {
+    console.warn("繁體轉換載入失敗，保留 Whisper 原始文字。", error);
+    return cues;
+  }
 }
 
 function updateModelProgress(progress) {
