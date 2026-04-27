@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
+import subprocess
 import threading
 import uuid
 from pathlib import Path
@@ -14,20 +14,13 @@ from flask_cors import CORS
 from yt_dlp import YoutubeDL
 
 
-APP_NAME = "Whisper 字幕助手"
+APP_NAME = "Whisper Local Helper"
 HOST = "127.0.0.1"
 PORT = 8765
 ROOT_DIR = Path(__file__).resolve().parent
 FRONTEND_DIR = ROOT_DIR.parent
 DOWNLOAD_DIR = ROOT_DIR / "downloads"
 TOOLS_DIR = ROOT_DIR / "tools"
-ALLOWED_HOSTS = {
-    "youtube.com",
-    "www.youtube.com",
-    "m.youtube.com",
-    "youtu.be",
-    "music.youtube.com",
-}
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -77,6 +70,52 @@ def find_ffmpeg() -> str | None:
     return None
 
 
+def transcode_to_h264(source: Path, ffmpeg_path: str) -> Path:
+    if not source.exists():
+        raise FileNotFoundError(f"Downloaded file was not found: {source}")
+
+    temp_output = source.with_name(f"{source.stem}.h264.tmp.mp4")
+    backup_input = source.with_name(f"{source.stem}.source{source.suffix}")
+
+    command = [
+        ffmpeg_path,
+        "-y",
+        "-i",
+        str(source),
+        "-map",
+        "0:v:0?",
+        "-map",
+        "0:a:0?",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "23",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "160k",
+        "-movflags",
+        "+faststart",
+        str(temp_output),
+    ]
+
+    completed = subprocess.run(command, capture_output=True, text=True, check=False)
+    if completed.returncode != 0:
+        message = completed.stderr.strip() or completed.stdout.strip() or "FFmpeg transcode failed."
+        raise RuntimeError(message[-1200:])
+
+    if backup_input.exists():
+        backup_input.unlink()
+    source.replace(backup_input)
+    temp_output.replace(source)
+    backup_input.unlink(missing_ok=True)
+    return source
+
+
 class ProgressHook:
     def __init__(self, job_id: str) -> None:
         self.job_id = job_id
@@ -91,14 +130,14 @@ class ProgressHook:
                 self.job_id,
                 status="downloading",
                 progress=percent,
-                message=f"下載中 {percent}%",
+                message=f"Downloading {percent}%",
             )
         elif status == "finished":
             update_job(
                 self.job_id,
                 status="processing",
-                progress=95,
-                message="正在整理檔案",
+                progress=90,
+                message="Merging downloaded media",
             )
 
 
@@ -106,9 +145,10 @@ def run_download(job_id: str, url: str) -> None:
     DOWNLOAD_DIR.mkdir(exist_ok=True)
     output_template = str(DOWNLOAD_DIR / "%(title).120B-%(id)s.%(ext)s")
     ffmpeg_path = find_ffmpeg()
+
     options = {
         "outtmpl": output_template,
-        "format": "bv*[vcodec^=avc1][ext=mp4]+ba[ext=m4a]/b[vcodec^=avc1][ext=mp4]/best[vcodec^=avc1][ext=mp4]",
+        "format": "bv*[vcodec^=avc1][ext=mp4]+ba[ext=m4a]/b[vcodec^=avc1][ext=mp4]/best[vcodec^=avc1][ext=mp4]/bestvideo*+bestaudio/best",
         "merge_output_format": "mp4",
         "noplaylist": True,
         "restrictfilenames": True,
@@ -122,22 +162,23 @@ def run_download(job_id: str, url: str) -> None:
 
     try:
         if not ffmpeg_path:
-            raise RuntimeError(
-                "高畫質下載需要先安裝 ffmpeg，安裝後請重新啟動本機助手。"
-            )
+            raise RuntimeError("FFmpeg is required for Windows-compatible MP4 downloads. Please install FFmpeg and restart the helper.")
 
-        update_job(job_id, status="starting", progress=3, message="正在連線到 YouTube")
+        update_job(job_id, status="starting", progress=3, message="Connecting to YouTube")
         with YoutubeDL(options) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = Path(ydl.prepare_filename(info))
             if filename.suffix.lower() != ".mp4":
                 filename = filename.with_suffix(".mp4")
 
+        update_job(job_id, status="processing", progress=96, message="Converting video to Windows-compatible H.264 MP4")
+        filename = transcode_to_h264(filename, ffmpeg_path)
+
         update_job(
             job_id,
             status="done",
             progress=100,
-            message="下載完成",
+            message="Download completed as H.264 MP4",
             title=info.get("title") or filename.stem,
             file=str(filename),
         )
@@ -152,12 +193,14 @@ def run_download(job_id: str, url: str) -> None:
 
 @app.get("/health")
 def health() -> Any:
+    ffmpeg_path = find_ffmpeg()
     return jsonify(
         {
             "ok": True,
             "name": APP_NAME,
             "port": PORT,
             "download_dir": str(DOWNLOAD_DIR),
+            "ffmpeg": ffmpeg_path or "",
         }
     )
 
@@ -169,9 +212,9 @@ def download() -> Any:
     confirmed = bool(payload.get("confirmed"))
 
     if not confirmed:
-        return jsonify({"ok": False, "error": "請先確認影片為自己擁有或已取得授權。"}), 400
+        return jsonify({"ok": False, "error": "Please confirm that you own or have permission to download this video."}), 400
     if not is_youtube_url(url):
-        return jsonify({"ok": False, "error": "請輸入有效的 YouTube 網址。"}), 400
+        return jsonify({"ok": False, "error": "Please enter a valid YouTube URL."}), 400
 
     job_id = uuid.uuid4().hex
     with jobs_lock:
@@ -179,7 +222,7 @@ def download() -> Any:
             "id": job_id,
             "status": "queued",
             "progress": 0,
-            "message": "已加入下載佇列",
+            "message": "Queued",
             "file": "",
             "title": "",
         }
@@ -194,7 +237,7 @@ def get_job(job_id: str) -> Any:
     with jobs_lock:
         job = jobs.get(job_id)
     if not job:
-        return jsonify({"ok": False, "error": "找不到這個下載工作。"}), 404
+        return jsonify({"ok": False, "error": "Download job was not found."}), 404
     return jsonify({"ok": True, "job": job})
 
 
