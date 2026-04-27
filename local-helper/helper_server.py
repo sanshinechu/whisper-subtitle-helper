@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import threading
 import uuid
 from pathlib import Path
@@ -19,6 +20,7 @@ PORT = 8765
 ROOT_DIR = Path(__file__).resolve().parent
 FRONTEND_DIR = ROOT_DIR.parent
 DOWNLOAD_DIR = ROOT_DIR / "downloads"
+TOOLS_DIR = ROOT_DIR / "tools"
 ALLOWED_HOSTS = {
     "youtube.com",
     "www.youtube.com",
@@ -64,6 +66,17 @@ def update_job(job_id: str, **values: Any) -> None:
         jobs[job_id].update(values)
 
 
+def find_ffmpeg() -> str | None:
+    system_ffmpeg = shutil.which("ffmpeg")
+    if system_ffmpeg:
+        return system_ffmpeg
+
+    for candidate in TOOLS_DIR.glob("**/ffmpeg.exe"):
+        return str(candidate)
+
+    return None
+
+
 class ProgressHook:
     def __init__(self, job_id: str) -> None:
         self.job_id = job_id
@@ -92,9 +105,10 @@ class ProgressHook:
 def run_download(job_id: str, url: str) -> None:
     DOWNLOAD_DIR.mkdir(exist_ok=True)
     output_template = str(DOWNLOAD_DIR / "%(title).120B-%(id)s.%(ext)s")
+    ffmpeg_path = find_ffmpeg()
     options = {
         "outtmpl": output_template,
-        "format": "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best",
+        "format": "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bestvideo*+bestaudio/best",
         "merge_output_format": "mp4",
         "noplaylist": True,
         "restrictfilenames": True,
@@ -103,8 +117,15 @@ def run_download(job_id: str, url: str) -> None:
         "quiet": True,
         "no_warnings": True,
     }
+    if ffmpeg_path:
+        options["ffmpeg_location"] = ffmpeg_path
 
     try:
+        if not ffmpeg_path:
+            raise RuntimeError(
+                "高畫質下載需要先安裝 ffmpeg，安裝後請重新啟動本機助手。"
+            )
+
         update_job(job_id, status="starting", progress=3, message="正在連線到 YouTube")
         with YoutubeDL(options) as ydl:
             info = ydl.extract_info(url, download=True)
